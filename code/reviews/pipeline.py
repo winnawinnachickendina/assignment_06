@@ -49,8 +49,20 @@ def sentiment_step(reviews: pd.DataFrame, cache_file: str) -> list:
     re-run on the same reviews is free either way — but your cache also works
     offline, and it is what makes the transform steps below fast to debug.
     """
-    # TODO: your code here
-    pass
+    if os.path.exists(cache_file):
+        with open(cache_file, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    documents = []
+    for review in reviews.to_dict("records"):
+        response = get_sentiment(review["text"])
+        document = response["results"]["documents"][0]
+        document["review_id"] = review["review_id"]
+        documents.append(document)
+
+    with open(cache_file, "w", encoding="utf-8") as fh:
+        json.dump(documents, fh)
+    return documents
 
 
 def entities_step(reviews: pd.DataFrame, cache_file: str) -> list:
@@ -59,8 +71,20 @@ def entities_step(reviews: pd.DataFrame, cache_file: str) -> list:
     One dict per review: the Azure entity-recognition document with `review_id`
     added. Same cache rule, same loop, `get_entities` instead of `get_sentiment`.
     """
-    # TODO: your code here
-    pass
+    if os.path.exists(cache_file):
+        with open(cache_file, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    documents = []
+    for review in reviews.to_dict("records"):
+        response = get_entities(review["text"])
+        document = response["results"]["documents"][0]
+        document["review_id"] = review["review_id"]
+        documents.append(document)
+
+    with open(cache_file, "w", encoding="utf-8") as fh:
+        json.dump(documents, fh)
+    return documents
 
 
 def sentences_table(documents: list) -> pd.DataFrame:
@@ -77,8 +101,13 @@ def sentences_table(documents: list) -> pd.DataFrame:
     and `.cumcount()`. Keep only the six columns above. Strip the trailing space
     Azure leaves on `sentence_text` with `.str.strip()`.
     """
-    # TODO: your code here
-    pass
+    table = pd.json_normalize(documents, record_path="sentences", meta=["review_id"],
+                              record_prefix="sentence_")
+    table["sentence_id"] = table.groupby("review_id").cumcount()
+    table = table[["review_id", "sentence_id", "sentence_text", "sentence_sentiment",
+                   "sentence_offset", "sentence_length"]].copy()
+    table["sentence_text"] = table["sentence_text"].str.strip()
+    return table.reset_index(drop=True)
 
 
 def opinions_table(documents: list) -> pd.DataFrame:
@@ -105,8 +134,33 @@ def opinions_table(documents: list) -> pd.DataFrame:
     `pd.DataFrame(rows, columns=[...the seven names...])`, so a set of reviews
     with no targets still gives a table with the right columns.
     """
-    # TODO: your code here
-    pass
+    rows = []
+    for document in documents:
+        review_id = document.get("review_id")
+        for sentence_id, sentence in enumerate(document.get("sentences", [])):
+            assessments = sentence.get("assessments", [])
+            assessment_texts = {index: item["text"] for index, item in enumerate(assessments)}
+            for target in sentence.get("targets", []):
+                picked = []
+                for relation in target.get("relations", []):
+                    if relation.get("relationType") == "assessment":
+                        ref = relation.get("ref", "")
+                        if "/assessments/" not in ref:
+                            continue
+                        index = int(ref.split("/assessments/")[-1])
+                        picked.append(assessment_texts.get(index, ""))
+                rows.append({
+                    "review_id": review_id,
+                    "sentence_id": sentence_id,
+                    "mention": target.get("text"),
+                    "mention_sentiment": target.get("sentiment"),
+                    "assessments": ", ".join(filter(None, picked)),
+                    "mention_offset": target.get("offset"),
+                    "source": "opinion",
+                })
+    columns = ["review_id", "sentence_id", "mention", "mention_sentiment",
+               "assessments", "mention_offset", "source"]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def entities_table(documents: list) -> pd.DataFrame:
@@ -121,8 +175,12 @@ def entities_table(documents: list) -> pd.DataFrame:
     `.isin(MENTION_CATEGORIES)` on `entity_category`. A document with no
     entities contributes no rows, which `json_normalize` handles for you.
     """
-    # TODO: your code here
-    pass
+    table = pd.json_normalize(documents, record_path="entities", meta=["review_id"],
+                              record_prefix="entity_")
+    if table.empty:
+        return pd.DataFrame(columns=["review_id", "entity_text", "entity_category", "entity_offset"])
+    table = table[table["entity_category"].isin(MENTION_CATEGORIES)].copy()
+    return table[["review_id", "entity_text", "entity_category", "entity_offset"]].reset_index(drop=True)
 
 
 def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
@@ -144,5 +202,26 @@ def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
     cache when the request is exactly the same, so the same reviews must
     produce the same list every time.
     """
-    # TODO: your code here
-    pass
+    if os.path.exists(cache_file):
+        return pd.read_csv(cache_file)
+
+    rows = []
+    for review in reviews.to_dict("records"):
+        review_id = review["review_id"]
+        named = mentions[mentions["review_id"] == review_id].sort_values("mention_offset")
+        if named.empty:
+            continue
+        mention_list = named["mention"].drop_duplicates().tolist()
+        answers = classify_mentions(review["text"], mention_list)["answers"]
+        for mention in mention_list:
+            answer = answers[mention]
+            rows.append({
+                "review_id": review_id,
+                "mention": mention,
+                "subject": answer["choice"],
+                "subject_confidence": answer["confidence"],
+            })
+
+    table = pd.DataFrame(rows, columns=["review_id", "mention", "subject", "subject_confidence"])
+    table.to_csv(cache_file, index=False)
+    return table

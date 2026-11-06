@@ -18,6 +18,9 @@ Test it: pytest tests/test_pipeline.py -k app
 """
 
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
 
 import streamlit as st
 
@@ -125,3 +128,72 @@ from reviews import (
 #
 # What the page does NOT do: call the API directly, group or pivot, or build the
 # prompt itself. That logic lives in the package; the page only assembles it.
+
+reviews_file = os.environ.get("REVIEWS_FILE", REVIEWS_FILE)
+
+st.title("Salt City Coffee — What Customers Are Saying")
+st.markdown("Every customer review, broken into the things people talk about. Filter by location or subject, or ask a question at the bottom of the page.")
+
+mentions = analyze_reviews(reviews_file)
+
+location_options = ["All"] + sorted(mentions["location"].dropna().unique().tolist())
+subject_options = ["All"] + sorted(mentions["subject"].dropna().unique().tolist())
+
+col1, col2 = st.columns(2)
+with col1:
+    location = st.selectbox("Location", location_options, key="location")
+with col2:
+    subject = st.selectbox("Subject", subject_options, key="subject")
+
+selected = mentions.copy()
+if location != "All":
+    selected = selected[selected["location"] == location]
+if subject != "All":
+    selected = selected[selected["subject"] == subject]
+
+col_review_count, col_mentions, col_positive, col_negative = st.columns(4)
+col_review_count.metric("Reviews", int(selected["review_id"].nunique()))
+col_mentions.metric("Mentions", int(len(selected)))
+col_positive.metric("Positive", int((selected["mention_sentiment"] == "positive").sum()))
+col_negative.metric("Negative", int((selected["mention_sentiment"] == "negative").sum()))
+
+summary = summarize_items(selected)
+most_praised, most_complained, what_people_said = st.tabs([
+    "Most praised",
+    "Most complained about",
+    "What people said",
+])
+
+with most_praised:
+    praised = summary[summary["net"] > 0].sort_values(["net", "item"], ascending=[False, True]).head(5)
+    st.dataframe(praised, hide_index=True)
+
+with most_complained:
+    complained = summary[summary["net"] < 0].sort_values(["net", "item"], ascending=[True, True]).head(5)
+    st.dataframe(complained, hide_index=True)
+
+with what_people_said:
+    st.dataframe(
+        selected[["date", "location", "item", "subject", "mention_sentiment", "assessments", "sentence_text"]],
+        hide_index=True,
+    )
+
+st.subheader("Ask the reviews")
+question = st.text_input("Your question", key="question", placeholder="What is the most popular product?")
+if st.button("Ask", key="ask"):
+    question = question.strip()
+    if question:
+        scope, evidence = answer_question(question, mentions, load_aliases())
+        if evidence.empty:
+            st.warning(
+                f"No reviews mention {describe_scope(scope)}. Try a menu item, a staff member, or part of the shop."
+            )
+        else:
+            with st.spinner("Asking the model..."):
+                answer = ask_llm(build_messages(question, evidence))
+            st.markdown(answer)
+            st.caption(f"Based on {len(evidence)} mentions — {describe_scope(scope)}:")
+            st.dataframe(
+                evidence[["date", "location", "item", "mention_sentiment", "sentence_text"]],
+                hide_index=True,
+            )
