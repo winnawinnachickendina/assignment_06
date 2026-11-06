@@ -139,7 +139,9 @@ def opinions_table(documents: list) -> pd.DataFrame:
         review_id = document.get("review_id")
         for sentence_id, sentence in enumerate(document.get("sentences", [])):
             assessments = sentence.get("assessments", [])
-            assessment_texts = {index: item["text"] for index, item in enumerate(assessments)}
+            assessment_texts = {
+                index: item["text"] for index, item in enumerate(assessments)
+            }
             for target in sentence.get("targets", []):
                 picked = []
                 for relation in target.get("relations", []):
@@ -158,8 +160,15 @@ def opinions_table(documents: list) -> pd.DataFrame:
                     "mention_offset": target.get("offset"),
                     "source": "opinion",
                 })
-    columns = ["review_id", "sentence_id", "mention", "mention_sentiment",
-               "assessments", "mention_offset", "source"]
+    columns = [
+        "review_id",
+        "sentence_id",
+        "mention",
+        "mention_sentiment",
+        "assessments",
+        "mention_offset",
+        "source",
+    ]
     return pd.DataFrame(rows, columns=columns)
 
 
@@ -175,12 +184,20 @@ def entities_table(documents: list) -> pd.DataFrame:
     `.isin(MENTION_CATEGORIES)` on `entity_category`. A document with no
     entities contributes no rows, which `json_normalize` handles for you.
     """
-    table = pd.json_normalize(documents, record_path="entities", meta=["review_id"],
-                              record_prefix="entity_")
+    table = pd.json_normalize(
+        documents,
+        record_path="entities",
+        meta=["review_id"],
+        record_prefix="entity_",
+    )
     if table.empty:
-        return pd.DataFrame(columns=["review_id", "entity_text", "entity_category", "entity_offset"])
+        return pd.DataFrame(
+            columns=["review_id", "entity_text", "entity_category", "entity_offset"]
+        )
     table = table[table["entity_category"].isin(MENTION_CATEGORIES)].copy()
-    return table[["review_id", "entity_text", "entity_category", "entity_offset"]].reset_index(drop=True)
+    return table[
+        ["review_id", "entity_text", "entity_category", "entity_offset"]
+    ].reset_index(drop=True)
 
 
 def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
@@ -208,7 +225,9 @@ def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
     rows = []
     for review in reviews.to_dict("records"):
         review_id = review["review_id"]
-        named = mentions[mentions["review_id"] == review_id].sort_values("mention_offset")
+        named = mentions[mentions["review_id"] == review_id].sort_values(
+            "mention_offset"
+        )
         if named.empty:
             continue
         mention_list = named["mention"].drop_duplicates().tolist()
@@ -222,6 +241,9 @@ def subjects_step(reviews: pd.DataFrame, mentions: pd.DataFrame,
                 "subject_confidence": answer["confidence"],
             })
 
-    table = pd.DataFrame(rows, columns=["review_id", "mention", "subject", "subject_confidence"])
+    table = pd.DataFrame(
+        rows,
+        columns=["review_id", "mention", "subject", "subject_confidence"],
+    )
     table.to_csv(cache_file, index=False)
     return table

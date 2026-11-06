@@ -132,12 +132,20 @@ from reviews import (
 reviews_file = os.environ.get("REVIEWS_FILE", REVIEWS_FILE)
 
 st.title("Salt City Coffee — What Customers Are Saying")
-st.markdown("Every customer review, broken into the things people talk about. Filter by location or subject, or ask a question at the bottom of the page.")
+st.markdown(
+    "Every customer review, broken into the things people talk about. "
+    "Filter by location or subject, or ask a question at the bottom of "
+    "the page."
+)
 
 mentions = analyze_reviews(reviews_file)
 
-location_options = ["All"] + sorted(mentions["location"].dropna().unique().tolist())
-subject_options = ["All"] + sorted(mentions["subject"].dropna().unique().tolist())
+location_options = [
+    "All",
+] + sorted(mentions["location"].dropna().unique().tolist())
+subject_options = [
+    "All",
+] + sorted(mentions["subject"].dropna().unique().tolist())
 
 col1, col2 = st.columns(2)
 with col1:
@@ -154,8 +162,14 @@ if subject != "All":
 col_review_count, col_mentions, col_positive, col_negative = st.columns(4)
 col_review_count.metric("Reviews", int(selected["review_id"].nunique()))
 col_mentions.metric("Mentions", int(len(selected)))
-col_positive.metric("Positive", int((selected["mention_sentiment"] == "positive").sum()))
-col_negative.metric("Negative", int((selected["mention_sentiment"] == "negative").sum()))
+col_positive.metric(
+    "Positive",
+    int((selected["mention_sentiment"] == "positive").sum()),
+)
+col_negative.metric(
+    "Negative",
+    int((selected["mention_sentiment"] == "negative").sum()),
+)
 
 summary = summarize_items(selected)
 most_praised, most_complained, what_people_said = st.tabs([
@@ -165,35 +179,69 @@ most_praised, most_complained, what_people_said = st.tabs([
 ])
 
 with most_praised:
-    praised = summary[summary["net"] > 0].sort_values(["net", "item"], ascending=[False, True]).head(5)
+    praised = (
+        summary[summary["net"] > 0]
+        .sort_values(["net", "item"], ascending=[False, True])
+        .head(5)
+    )
     st.dataframe(praised, hide_index=True)
 
 with most_complained:
-    complained = summary[summary["net"] < 0].sort_values(["net", "item"], ascending=[True, True]).head(5)
+    complained = (
+        summary[summary["net"] < 0]
+        .sort_values(["net", "item"], ascending=[True, True])
+        .head(5)
+    )
     st.dataframe(complained, hide_index=True)
 
 with what_people_said:
     st.dataframe(
-        selected[["date", "location", "item", "subject", "mention_sentiment", "assessments", "sentence_text"]],
+        selected[
+            [
+                "date",
+                "location",
+                "item",
+                "subject",
+                "mention_sentiment",
+                "assessments",
+                "sentence_text",
+            ]
+        ],
         hide_index=True,
     )
 
 st.subheader("Ask the reviews")
-question = st.text_input("Your question", key="question", placeholder="What is the most popular product?")
+question = st.text_input(
+    "Your question",
+    key="question",
+    placeholder="What is the most popular product?",
+)
 if st.button("Ask", key="ask"):
     question = question.strip()
     if question:
         scope, evidence = answer_question(question, mentions, load_aliases())
         if evidence.empty:
             st.warning(
-                f"No reviews mention {describe_scope(scope)}. Try a menu item, a staff member, or part of the shop."
+                "No reviews mention "
+                f"{describe_scope(scope)}. Try a menu item, a staff member, "
+                "or part of the shop."
             )
         else:
             with st.spinner("Asking the model..."):
                 answer = ask_llm(build_messages(question, evidence))
             st.markdown(answer)
-            st.caption(f"Based on {len(evidence)} mentions — {describe_scope(scope)}:")
+            st.caption(
+                f"Based on {len(evidence)} mentions — {describe_scope(scope)}:"
+            )
             st.dataframe(
-                evidence[["date", "location", "item", "mention_sentiment", "sentence_text"]],
+                evidence[
+                    [
+                        "date",
+                        "location",
+                        "item",
+                        "mention_sentiment",
+                        "sentence_text",
+                    ]
+                ],
                 hide_index=True,
             )

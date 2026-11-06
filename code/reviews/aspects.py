@@ -127,18 +127,41 @@ def build_mentions(reviews: pd.DataFrame, sentences: pd.DataFrame,
     """
     combined = pd.concat([opinions, entity_rows], ignore_index=True)
     merged = combined.merge(subjects, on=["review_id", "mention"], how="left")
-    merged = merged.merge(sentences[["review_id", "sentence_id", "sentence_text",
-                                    "sentence_sentiment"]], on=["review_id", "sentence_id"],
-                          how="left")
-    merged = merged.merge(reviews[["review_id", "date", "location", "stars"]],
-                          on="review_id", how="left")
+    merged = merged.merge(
+        sentences[
+            ["review_id", "sentence_id", "sentence_text", "sentence_sentiment"]
+        ],
+        on=["review_id", "sentence_id"],
+        how="left",
+    )
+    merged = merged.merge(
+        reviews[["review_id", "date", "location", "stars"]],
+        on="review_id",
+        how="left",
+    )
     merged["item"] = merged["mention"].map(lambda value: item_name(value, aliases))
     merged = merged[merged["subject"] != "other"].copy()
-    merged = merged.sort_values(["review_id", "mention_offset"]).reset_index(drop=True)
-    merged = merged.drop_duplicates(subset=["review_id", "sentence_id", "item"], keep="first")
-    columns = ["review_id", "date", "location", "stars", "item", "mention", "subject",
-               "mention_sentiment", "assessments", "sentence_text", "source",
-               "subject_confidence"]
+    merged = merged.sort_values(["review_id", "mention_offset"]).reset_index(
+        drop=True
+    )
+    merged = merged.drop_duplicates(
+        subset=["review_id", "sentence_id", "item"],
+        keep="first",
+    )
+    columns = [
+        "review_id",
+        "date",
+        "location",
+        "stars",
+        "item",
+        "mention",
+        "subject",
+        "mention_sentiment",
+        "assessments",
+        "sentence_text",
+        "source",
+        "subject_confidence",
+    ]
     return merged[columns].reset_index(drop=True)
 
 
@@ -159,8 +182,19 @@ def analyze_reviews(reviews_file: str) -> pd.DataFrame:
     entities = entities_table(entity_documents)
     entity_rows = entity_mentions(entities, sentences, opinions)
     combined = pd.concat([opinions, entity_rows], ignore_index=True)
-    subjects = subjects_step(reviews, combined, cache_path(reviews_file, "subjects", "csv"))
-    return build_mentions(reviews, sentences, opinions, entity_rows, subjects, load_aliases())
+    subjects = subjects_step(
+        reviews,
+        combined,
+        cache_path(reviews_file, "subjects", "csv"),
+    )
+    return build_mentions(
+        reviews,
+        sentences,
+        opinions,
+        entity_rows,
+        subjects,
+        load_aliases(),
+    )
 
 
 def summarize_items(mentions: pd.DataFrame) -> pd.DataFrame:
@@ -185,22 +219,37 @@ def summarize_items(mentions: pd.DataFrame) -> pd.DataFrame:
     - **Engineer** `net` = `positive` - `negative`: one number that says whether
       an item is loved or a problem.
     """
-    table = pd.pivot_table(mentions, index=["subject", "item"], columns="mention_sentiment",
-                          aggfunc="size", fill_value=0)
+    table = pd.pivot_table(
+        mentions,
+        index=["subject", "item"],
+        columns="mention_sentiment",
+        aggfunc="size",
+        fill_value=0,
+    )
     if isinstance(table, pd.Series):
         table = table.to_frame().T
     table = table.reset_index()
     counts = [col for col in table.columns if col not in ["subject", "item"]]
     if not counts:
-        return pd.DataFrame(columns=["subject", "item", "mentions", "positive", "negative", "net"])
+        return pd.DataFrame(
+            columns=["subject", "item", "mentions", "positive", "negative", "net"]
+        )
     table["mentions"] = table[counts].sum(axis=1)
     positive = table.get("positive", pd.Series(0, index=table.index))
     negative = table.get("negative", pd.Series(0, index=table.index))
-    table["positive"] = pd.to_numeric(positive, errors="coerce").fillna(0).astype(int)
-    table["negative"] = pd.to_numeric(negative, errors="coerce").fillna(0).astype(int)
+    table["positive"] = (
+        pd.to_numeric(positive, errors="coerce").fillna(0).astype(int)
+    )
+    table["negative"] = (
+        pd.to_numeric(negative, errors="coerce").fillna(0).astype(int)
+    )
     table["net"] = table["positive"] - table["negative"]
-    out = table[["subject", "item", "mentions", "positive", "negative", "net"]].copy()
-    out = out.sort_values(["mentions", "item"], ascending=[False, True]).reset_index(drop=True)
+    out = table[
+        ["subject", "item", "mentions", "positive", "negative", "net"]
+    ].copy()
+    out = out.sort_values(["mentions", "item"], ascending=[False, True]).reset_index(
+        drop=True
+    )
     return out
 
 
@@ -320,7 +369,10 @@ def build_messages(question: str, evidence: pd.DataFrame, limit: int = 20) -> li
 
     lines = [
         f"Question: {question}",
-        f"Facts: {total} mentions — {positive} positive, {negative} negative, {neutral} neutral or mixed.",
+        (
+            f"Facts: {total} mentions — {positive} positive, {negative} "
+            f"negative, {neutral} neutral or mixed."
+        ),
         "Items, most mentioned first:",
     ]
 
@@ -335,8 +387,10 @@ def build_messages(question: str, evidence: pd.DataFrame, limit: int = 20) -> li
     lines.append("Review sentences:")
     for row in evidence.head(limit).to_dict("records"):
         lines.append(
-            f"- ({row['location']}, {row['date']}, {row['item']}, {row['mention_sentiment']}) "
-            f"{row['sentence_text']}"
+            (
+                f"- ({row['location']}, {row['date']}, {row['item']}, "
+                f"{row['mention_sentiment']}) {row['sentence_text']}"
+            )
         )
 
     return [

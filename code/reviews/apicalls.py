@@ -103,7 +103,10 @@ def classify_mentions(review_text: str, mentions: list) -> dict:
     """
     url = f"{BASE_URL}/api/ollama/systemone"
     headers = {"X-API-KEY": get_api_key()}
-    payload = {"state": {"review": review_text}, "questions": subject_questions(mentions)}
+    payload = {
+        "state": {"review": review_text},
+        "questions": subject_questions(mentions),
+    }
     response = requests.post(url, headers=headers, json=payload)
     response.raise_for_status()
     return response.json()
